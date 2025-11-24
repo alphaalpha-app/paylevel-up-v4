@@ -1,17 +1,31 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { WorkLog, UserSettings, Job } from '../types';
-import { FileCheck, Calendar, Calculator, AlertTriangle, CheckCircle, PlusCircle, MinusCircle, Percent, Briefcase } from 'lucide-react';
+import { FileCheck, Calendar, Calculator, AlertTriangle, CheckCircle, PlusCircle, MinusCircle, Percent, Briefcase, Trash2, Plus, Save } from 'lucide-react';
 
 interface PayslipVerifierProps {
   logs: WorkLog[];
   settings: UserSettings;
   jobs: Job[];
   onAddLog: (log: WorkLog) => void;
+  activeJobId: string;
+  onJobChange: (id: string) => void;
 }
 
-export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings, jobs, onAddLog }) => {
-  const [selectedJobId, setSelectedJobId] = useState<string>(jobs[0]?.id || '');
+interface AdjustmentItem {
+  id: string;
+  name: string;
+  hours: string;
+  rate: string;
+  amount: string;
+}
+
+export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings, jobs, onAddLog, activeJobId, onJobChange }) => {
+  // Determine which job to use. If 'all' is selected, default to first job for calculation context or force selection.
+  // Usually verification is per job.
+  const effectiveJobId = activeJobId === 'all' ? (jobs[0]?.id || '') : activeJobId;
+  const activeJob = jobs.find(j => j.id === effectiveJobId);
+
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [periodLength, setPeriodLength] = useState<'14' | '30'>('14'); 
   const [slipWeekdayHours, setSlipWeekdayHours] = useState<string>('0');
@@ -19,13 +33,54 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
   const [slipAllowances, setSlipAllowances] = useState<string>('0');
   const [slipTaxRate, setSlipTaxRate] = useState<string>(settings.taxRate?.toString() || '0');
 
-  useEffect(() => {
-    if (jobs.length > 0 && !jobs.find(j => j.id === selectedJobId)) {
-        setSelectedJobId(jobs[0].id);
-    }
-  }, [jobs]);
+  // Dynamic Adjustments (Other Items)
+  const [adjustments, setAdjustments] = useState<AdjustmentItem[]>([]);
 
-  const activeJob = jobs.find(j => j.id === selectedJobId);
+  const addAdjustment = () => {
+      setAdjustments([...adjustments, { id: crypto.randomUUID(), name: '', hours: '', rate: '', amount: '' }]);
+  };
+  
+  const removeAdjustment = (id: string) => {
+      setAdjustments(adjustments.filter(a => a.id !== id));
+  };
+
+  const updateAdjustment = (id: string, field: keyof AdjustmentItem, value: string) => {
+      setAdjustments(prev => prev.map(a => {
+          if (a.id !== id) return a;
+          const updated = { ...a, [field]: value };
+          
+          // Auto-calculate Amount if Hours and Rate are present and changed
+          if ((field === 'hours' || field === 'rate') && updated.hours && updated.rate) {
+              const h = parseFloat(updated.hours);
+              const r = parseFloat(updated.rate);
+              if (!isNaN(h) && !isNaN(r)) {
+                  updated.amount = (h * r).toFixed(2);
+              }
+          }
+          return updated;
+      }));
+  };
+
+  const handleAddToLog = (adj: AdjustmentItem) => {
+    if (!adj.hours || parseFloat(adj.hours) <= 0) {
+        alert("請輸入有效的時數 (Hours)");
+        return;
+    }
+    if (window.confirm(`確定將 "${adj.name || '項目'}" 的 ${adj.hours} 小時加入工時紀錄嗎？這將累積到您的加薪進度中。`)) {
+        onAddLog({
+            id: crypto.randomUUID(),
+            jobId: effectiveJobId,
+            date: endDate, // Use period end date
+            startTime: '-',
+            endTime: '-',
+            duration: parseFloat(adj.hours),
+            notes: `Adjustment: ${adj.name}`,
+            timestamp: Date.now()
+        });
+    }
+  };
+
+  const totalAdjustments = adjustments.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
 
   // Calculate App Data
   const appStats = useMemo(() => {
@@ -56,7 +111,7 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
       weekendHours,
       estimatedBasePay: (weekdayHours * activeJob.hourlyRate) + (weekendHours * activeJob.weekendHourlyRate)
     };
-  }, [logs, endDate, periodLength, selectedJobId, activeJob]);
+  }, [logs, endDate, periodLength, effectiveJobId, activeJob]);
 
   // Calculations
   const inputWeekday = parseFloat(slipWeekdayHours) || 0;
@@ -66,10 +121,10 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
 
   if (!appStats || !activeJob) return <div>Please add a job first.</div>;
 
-  const appTotalGross = appStats.estimatedBasePay + inputAllowance;
+  const appTotalGross = appStats.estimatedBasePay + inputAllowance; 
   const appNetPay = appTotalGross * (1 - inputTaxRate/100);
 
-  const slipTotalGross = (inputWeekday * activeJob.hourlyRate) + (inputWeekend * activeJob.weekendHourlyRate) + inputAllowance;
+  const slipTotalGross = (inputWeekday * activeJob.hourlyRate) + (inputWeekend * activeJob.weekendHourlyRate) + inputAllowance + totalAdjustments;
   const slipNetPay = slipTotalGross * (1 - inputTaxRate/100);
 
   const diffWeekday = inputWeekday - appStats.weekdayHours;
@@ -82,7 +137,7 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
 
     const newLog: WorkLog = {
         id: crypto.randomUUID(),
-        jobId: selectedJobId,
+        jobId: effectiveJobId,
         date: endDate,
         startTime: '-',
         endTime: '-',
@@ -113,16 +168,17 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-20">
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2"><FileCheck className="w-5 h-5 text-primary" /> 薪資單核對</h2>
         
         {/* Job Selector */}
         <div className="mb-6">
             <label className="block text-xs font-medium text-gray-500 mb-1">選擇核對的工作</label>
-            <select value={selectedJobId} onChange={(e) => setSelectedJobId(e.target.value)} className="w-full bg-indigo-50 border-none text-indigo-900 rounded-lg p-2 font-bold">
+            <select value={effectiveJobId} onChange={(e) => onJobChange(e.target.value)} className="w-full bg-indigo-50 border-none text-indigo-900 rounded-lg p-2 font-bold">
                 {jobs.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
             </select>
+            {activeJobId === 'all' && <p className="text-[10px] text-gray-400 mt-1">* "所有工作"模式下默認顯示第一份工作</p>}
         </div>
 
         {/* Inputs */}
@@ -131,33 +187,153 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
              <div><label className="text-xs text-gray-500 block">週期長度</label><select value={periodLength} onChange={(e) => setPeriodLength(e.target.value as any)} className="w-full text-xs rounded border-gray-300"><option value="14">14 天</option><option value="30">30 天</option></select></div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8 mb-8">
+             {/* Payslip Data Entry */}
             <div className="space-y-4">
-                <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Calendar className="w-4 h-4" /> App 紀錄 ({activeJob.name})</h3>
-                <div className="p-4 bg-indigo-50 rounded-xl space-y-2 text-sm">
-                    <div className="flex justify-between"><span>平日</span><span className="font-bold">{appStats.weekdayHours.toFixed(2)}h</span></div>
-                    <div className="flex justify-between"><span>週末</span><span className="font-bold">{appStats.weekendHours.toFixed(2)}h</span></div>
-                    <div className="flex justify-between border-t border-indigo-200 pt-2 font-bold text-indigo-700"><span>預估實領 (Net)</span><span>{settings.currency} {appNetPay.toLocaleString()}</span></div>
-                </div>
+                 <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Calculator className="w-4 h-4" /> Payslip 數據輸入</h3>
+                 <div className="bg-white border rounded-xl overflow-hidden">
+                    <div className="grid grid-cols-2 divide-x border-b bg-gray-50">
+                        <div className="p-3">
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">平日時數</label>
+                            <input type="number" value={slipWeekdayHours} onChange={(e) => setSlipWeekdayHours(e.target.value)} className="w-full text-sm font-bold border-gray-200 rounded p-1 text-right"/>
+                        </div>
+                        <div className="p-3">
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">週末時數</label>
+                            <input type="number" value={slipWeekendHours} onChange={(e) => setSlipWeekendHours(e.target.value)} className="w-full text-sm font-bold border-gray-200 rounded p-1 text-right"/>
+                        </div>
+                    </div>
+                    
+                    <div className="p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-medium text-gray-600">基本津貼 (Allowances)</label>
+                            <input type="number" placeholder="0" value={slipAllowances} onChange={(e) => setSlipAllowances(e.target.value)} className="w-24 text-xs border border-gray-300 rounded p-1 text-right"/>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-medium text-gray-600">預扣稅率 (Tax %)</label>
+                            <input type="number" placeholder="0" value={slipTaxRate} onChange={(e) => setSlipTaxRate(e.target.value)} className="w-24 text-xs border border-gray-300 rounded p-1 text-right"/>
+                        </div>
+                    </div>
+
+                    {/* Dynamic Adjustments Section */}
+                    <div className="border-t bg-gray-50/50">
+                        <div className="p-3 flex justify-between items-center">
+                            <label className="text-xs font-bold text-gray-500">其他項目 / 加班 (Other/OT)</label>
+                            <button onClick={addAdjustment} className="text-xs bg-white border border-gray-300 hover:bg-gray-100 px-2 py-1 rounded flex items-center gap-1 transition-colors">
+                                <Plus className="w-3 h-3"/> 新增
+                            </button>
+                        </div>
+                        
+                        {/* Adjustment Headers */}
+                        {adjustments.length > 0 && (
+                             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 px-3 pb-1 text-[10px] text-gray-400 font-medium">
+                                 <div>描述</div>
+                                 <div className="text-center">時數</div>
+                                 <div className="text-right">Rate</div>
+                                 <div className="text-right">金額</div>
+                                 <div></div>
+                             </div>
+                        )}
+
+                        <div className="space-y-1 pb-3 px-3">
+                            {adjustments.map((adj) => (
+                                <div key={adj.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center animate-fade-in">
+                                    {/* Name */}
+                                    <input 
+                                        type="text" 
+                                        placeholder="Item Name" 
+                                        value={adj.name}
+                                        onChange={(e) => updateAdjustment(adj.id, 'name', e.target.value)}
+                                        className="w-full text-xs border border-gray-300 rounded p-1.5"
+                                    />
+                                    
+                                    {/* Hours (Optional) */}
+                                    <input 
+                                        type="number" 
+                                        placeholder="Hr" 
+                                        value={adj.hours}
+                                        onChange={(e) => updateAdjustment(adj.id, 'hours', e.target.value)}
+                                        className="w-full text-xs border border-gray-300 rounded p-1.5 text-center"
+                                    />
+                                    
+                                    {/* Rate (Optional) */}
+                                    <input 
+                                        type="number" 
+                                        placeholder="Rate" 
+                                        value={adj.rate}
+                                        onChange={(e) => updateAdjustment(adj.id, 'rate', e.target.value)}
+                                        className="w-full text-xs border border-gray-300 rounded p-1.5 text-right"
+                                    />
+
+                                    {/* Amount */}
+                                    <input 
+                                        type="number" 
+                                        placeholder="$" 
+                                        value={adj.amount}
+                                        onChange={(e) => updateAdjustment(adj.id, 'amount', e.target.value)}
+                                        className="w-full text-xs border border-gray-300 rounded p-1.5 text-right font-bold text-gray-700"
+                                    />
+                                    
+                                    <div className="flex items-center gap-1">
+                                        {parseFloat(adj.hours) > 0 && (
+                                            <button 
+                                                onClick={() => handleAddToLog(adj)} 
+                                                title="Add Hours to Work Log"
+                                                className="text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 p-1 rounded"
+                                            >
+                                                <PlusCircle className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        <button onClick={() => removeAdjustment(adj.id)} className="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-red-50">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {adjustments.length === 0 && <div className="text-[10px] text-gray-400 text-center italic py-2">無額外項目</div>}
+                        </div>
+                        {adjustments.length > 0 && (
+                            <div className="px-4 py-2 bg-gray-100 flex justify-between items-center text-xs font-bold text-gray-600">
+                                <span>調整總額</span>
+                                <span>{totalAdjustments > 0 ? '+' : ''}{totalAdjustments.toFixed(2)}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-indigo-50 p-4 flex justify-between items-center border-t border-indigo-100">
+                         <span className="text-sm font-bold text-indigo-900">Payslip Net Pay</span>
+                         <span className="text-xl font-black text-indigo-600">{settings.currency} {slipNetPay.toLocaleString()}</span>
+                    </div>
+                 </div>
             </div>
 
+            {/* App Comparison */}
             <div className="space-y-4">
-                 <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Calculator className="w-4 h-4" /> Payslip 數據</h3>
-                 <div className="p-4 bg-white border rounded-xl space-y-2">
-                    <div className="flex justify-between items-center"><label className="text-xs">平日時數</label><input type="number" value={slipWeekdayHours} onChange={(e) => setSlipWeekdayHours(e.target.value)} className="w-20 text-xs border rounded p-1 text-right"/></div>
-                    <div className="flex justify-between items-center"><label className="text-xs">週末時數</label><input type="number" value={slipWeekendHours} onChange={(e) => setSlipWeekendHours(e.target.value)} className="w-20 text-xs border rounded p-1 text-right"/></div>
-                    <div className="flex justify-between items-center"><label className="text-xs">津貼 ($)</label><input type="number" value={slipAllowances} onChange={(e) => setSlipAllowances(e.target.value)} className="w-20 text-xs border rounded p-1 text-right"/></div>
-                    <div className="flex justify-between items-center"><label className="text-xs">稅率 (%)</label><input type="number" value={slipTaxRate} onChange={(e) => setSlipTaxRate(e.target.value)} className="w-20 text-xs border rounded p-1 text-right"/></div>
-                    <div className="flex justify-between border-t pt-2 font-bold text-gray-800 text-sm"><span>Payslip Net</span><span>{settings.currency} {slipNetPay.toLocaleString()}</span></div>
-                 </div>
+                <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Calendar className="w-4 h-4" /> App 紀錄 ({activeJob.name})</h3>
+                <div className="p-4 bg-white border rounded-xl space-y-2 text-sm">
+                    <div className="flex justify-between"><span>平日時數</span><span className="font-bold">{appStats.weekdayHours.toFixed(2)}h</span></div>
+                    <div className="flex justify-between"><span>週末時數</span><span className="font-bold">{appStats.weekendHours.toFixed(2)}h</span></div>
+                    <div className="flex justify-between pt-2 text-gray-500 text-xs">
+                        <span>基本薪資估算</span>
+                        <span>{settings.currency} {appStats.estimatedBasePay.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-bold text-gray-800"><span>App Net (含津貼/無調整)</span><span>{settings.currency} {appNetPay.toLocaleString()}</span></div>
+                </div>
             </div>
         </div>
 
-        <div className="mt-6 border-t pt-4 space-y-3">
+        <div className="mt-2 pt-4 border-t space-y-3">
              <DiffRow type="weekday" diff={diffWeekday} appVal={appStats.weekdayHours} slipVal={inputWeekday} />
              <DiffRow type="weekend" diff={diffWeekend} appVal={appStats.weekendHours} slipVal={inputWeekend} />
-             <div className={`text-right font-bold text-lg ${diffPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                差異: {settings.currency} {Math.abs(diffPay).toLocaleString()} ({diffPay > 0 ? '少算' : '多算'})
+             
+             {totalAdjustments !== 0 && (
+                 <div className="p-3 rounded-lg border border-blue-100 bg-blue-50 flex items-center justify-between text-xs text-blue-800">
+                     <span className="font-bold">額外調整項目差異</span>
+                     <span>App 未自動追蹤: <span className="font-bold">+{totalAdjustments.toFixed(2)}</span></span>
+                 </div>
+             )}
+
+             <div className={`text-right font-bold text-lg mt-4 ${diffPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                總差異: {settings.currency} {Math.abs(diffPay).toLocaleString()} ({diffPay > 0 ? '少算' : '多算'})
              </div>
         </div>
       </div>

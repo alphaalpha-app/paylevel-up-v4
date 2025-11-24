@@ -52,6 +52,7 @@ export interface AppState {
   settings: UserSettings;
   jobs: Job[];
   templates: ShiftTemplate[]; // New Templates list
+  activeJobId?: string; // Added for global persistence
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {

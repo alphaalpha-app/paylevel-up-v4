@@ -7,11 +7,12 @@ interface CalendarViewProps {
   logs: WorkLog[];
   settings: UserSettings;
   jobs: Job[];
+  activeJobId: string;
+  onJobChange: (id: string) => void;
 }
 
-export const CalendarView: React.FC<CalendarViewProps> = ({ logs, settings, jobs }) => {
+export const CalendarView: React.FC<CalendarViewProps> = ({ logs, settings, jobs, activeJobId, onJobChange }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedJobId, setSelectedJobId] = useState<string>('all');
   
   // Selection State
   const [selectStart, setSelectStart] = useState<string | null>(null);
@@ -32,9 +33,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ logs, settings, jobs
 
   // Filter logs first
   const filteredLogs = useMemo(() => {
-      if (selectedJobId === 'all') return logs;
-      return logs.filter(l => l.jobId === selectedJobId);
-  }, [logs, selectedJobId]);
+      if (activeJobId === 'all') return logs;
+      return logs.filter(l => l.jobId === activeJobId);
+  }, [logs, activeJobId]);
 
   // 1. Generate Calendar Grid
   const calendarDays = useMemo(() => {
@@ -137,8 +138,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ logs, settings, jobs
 
             <div className="relative">
                 <select 
-                    value={selectedJobId}
-                    onChange={(e) => setSelectedJobId(e.target.value)}
+                    value={activeJobId}
+                    onChange={(e) => onJobChange(e.target.value)}
                     className="appearance-none bg-indigo-50 border-none text-indigo-700 text-xs font-bold rounded-lg py-1.5 pl-3 pr-8"
                 >
                     <option value="all">All Jobs</option>

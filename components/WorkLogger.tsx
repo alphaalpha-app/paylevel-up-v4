@@ -10,6 +10,8 @@ interface WorkLoggerProps {
   onDeleteLog: (id: string) => void;
   templates: ShiftTemplate[];
   onUpdateTemplates: (templates: ShiftTemplate[]) => void;
+  activeJobId: string;
+  onJobChange: (id: string) => void;
 }
 
 const PRESET_TAGS = [
@@ -17,8 +19,14 @@ const PRESET_TAGS = [
   "100 Bronze", "200 Silver", "400 Gold", "Trainee Instructor", "Coach"
 ];
 
-export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, onDeleteLog, templates, onUpdateTemplates }) => {
-  const [selectedJobId, setSelectedJobId] = useState<string>(jobs[0]?.id || '');
+export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, onDeleteLog, templates, onUpdateTemplates, activeJobId, onJobChange }) => {
+  // Logic: WorkLogger cannot use 'all'. Default to first job if 'all' is selected globally.
+  // However, we want to allow changing it here.
+  // If user changes it here, we update the global state (as per requirement to sync).
+  
+  // Calculate effective ID for form usage
+  const effectiveJobId = activeJobId === 'all' ? (jobs[0]?.id || '') : activeJobId;
+
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [mode, setMode] = useState<'range' | 'manual'>('range');
   const [startTime, setStartTime] = useState('15:30');
@@ -31,11 +39,7 @@ export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, on
   const [isNamingTemplate, setIsNamingTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
 
-  useEffect(() => {
-      if (jobs.length > 0 && !jobs.find(j => j.id === selectedJobId)) {
-          setSelectedJobId(jobs[0].id);
-      }
-  }, [jobs]);
+  // No local useEffect needed to sync, we rely on props.
 
   const calculateDuration = (start: string, end: string): number => {
     const [startH, startM] = start.split(':').map(Number);
@@ -72,7 +76,7 @@ export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, on
 
       const newLog: WorkLog = {
         id: crypto.randomUUID(),
-        jobId: selectedJobId,
+        jobId: effectiveJobId,
         date,
         startTime: finalStart,
         endTime: finalEnd,
@@ -99,7 +103,7 @@ export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, on
       const newTemplate: ShiftTemplate = {
           id: crypto.randomUUID(),
           name: newTemplateName,
-          jobId: selectedJobId,
+          jobId: effectiveJobId,
           startTime,
           endTime,
           notes
@@ -109,7 +113,7 @@ export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, on
   };
 
   const handleLoadTemplate = (t: ShiftTemplate) => {
-      setSelectedJobId(t.jobId);
+      onJobChange(t.jobId); // Update global job
       setStartTime(t.startTime);
       setEndTime(t.endTime);
       setNotes(t.notes);
@@ -198,9 +202,9 @@ export const WorkLogger: React.FC<WorkLoggerProps> = ({ logs, jobs, onAddLog, on
                       <button
                         type="button"
                         key={job.id}
-                        onClick={() => setSelectedJobId(job.id)}
+                        onClick={() => onJobChange(job.id)}
                         className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
-                            selectedJobId === job.id 
+                            effectiveJobId === job.id 
                             ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300 font-bold shadow-sm transform scale-105' 
                             : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
                         }`}

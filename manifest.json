@@ -1,8 +1,7 @@
 {
   "name": "PayLevel Up",
   "short_name": "PayLevel",
-    "start_url": "/paylevel-up-v4/",
-    "scope": "/paylevel-up-v4/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#F9FAFB",
   "theme_color": "#4F46E5",

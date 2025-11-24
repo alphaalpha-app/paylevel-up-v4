@@ -10,13 +10,14 @@ interface DashboardProps {
   settings: UserSettings;
   jobs: Job[];
   onUpdateJob: (updatedJob: Job) => void;
+  activeJobId: string;
+  onJobChange: (id: string) => void;
 }
 
 type TrendMode = 'recent' | 'week' | 'biweek' | 'month' | 'history';
 
-export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUpdateJob }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUpdateJob, activeJobId, onJobChange }) => {
   // UI States
-  const [selectedJobId, setSelectedJobId] = useState<string>('all');
   const [trendMode, setTrendMode] = useState<TrendMode>('recent');
   const [trendDate, setTrendDate] = useState(new Date().toISOString().slice(0, 10)); 
   const [trendMonth, setTrendMonth] = useState(new Date().toISOString().slice(0, 7)); 
@@ -32,9 +33,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUp
 
   // Filter logs based on selected Job
   const filteredLogs = useMemo(() => {
-      if (selectedJobId === 'all') return logs;
-      return logs.filter(l => l.jobId === selectedJobId);
-  }, [logs, selectedJobId]);
+      if (activeJobId === 'all') return logs;
+      return logs.filter(l => l.jobId === activeJobId);
+  }, [logs, activeJobId]);
 
   // Helper: Get rate for a specific log (looks up its job)
   const getLogEarnings = (log: WorkLog) => {
@@ -75,8 +76,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUp
   let canLevelUp = false;
   let activeJobForLevelUp: Job | undefined = undefined;
 
-  if (selectedJobId !== 'all') {
-      const job = jobs.find(j => j.id === selectedJobId);
+  if (activeJobId !== 'all') {
+      const job = jobs.find(j => j.id === activeJobId);
       if (job) {
           targetHours = job.targetHours;
           progressPercent = Math.min(100, Math.max(0, (totalHours / targetHours) * 100));
@@ -215,8 +216,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUp
       {/* Job Filter Header */}
       <div className="flex justify-end mb-2">
          <select 
-            value={selectedJobId}
-            onChange={(e) => setSelectedJobId(e.target.value)}
+            value={activeJobId}
+            onChange={(e) => onJobChange(e.target.value)}
             className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg p-2 focus:ring-primary focus:border-primary shadow-sm"
          >
              <option value="all">All Jobs (合併數據)</option>
@@ -243,7 +244,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUp
       )}
 
       {/* Progress Bar (Only specific job) */}
-      {selectedJobId !== 'all' && (
+      {activeJobId !== 'all' && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
             <div className="flex justify-between items-end mb-2">
             <div>
@@ -332,7 +333,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ logs, settings, jobs, onUp
          <div className="flex items-center gap-3">
             <div className="bg-white p-2 rounded-full shadow-sm"><Sparkles className="w-5 h-5 text-emerald-500" /></div>
             <div>
-               <p className="text-xs text-emerald-600 font-medium">升職後潛在價值 ({selectedJobId === 'all' ? '所有工作加總' : activeJobForLevelUp?.name})</p>
+               <p className="text-xs text-emerald-600 font-medium">升職後潛在價值 ({activeJobId === 'all' ? '所有工作加總' : activeJobForLevelUp?.name})</p>
                <p className="text-lg font-bold text-emerald-700">{settings.currency} {potentialNextEarnings.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
             </div>
          </div>

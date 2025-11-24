@@ -19,6 +19,9 @@ const App: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  
+  // Global active job state (default to 'all')
+  const [activeJobId, setActiveJobId] = useState<string>('all');
 
   // Load from local storage on mount
   useEffect(() => {
@@ -59,6 +62,11 @@ const App: React.FC = () => {
         setJobs(currentJobs);
         setSettings(currentSettings);
         setTemplates(currentTemplates);
+        
+        // Restore active job selection
+        if (parsed.activeJobId) {
+            setActiveJobId(parsed.activeJobId);
+        }
 
       } catch (e) {
         console.error("Failed to parse saved data", e);
@@ -74,10 +82,10 @@ const App: React.FC = () => {
   // Save to local storage on change
   useEffect(() => {
     if (isLoaded) {
-      const stateToSave: AppState = { logs, settings, jobs, templates };
+      const stateToSave: AppState = { logs, settings, jobs, templates, activeJobId };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
     }
-  }, [logs, settings, jobs, templates, isLoaded]);
+  }, [logs, settings, jobs, templates, isLoaded, activeJobId]);
 
   // Handle Dark Mode
   useEffect(() => {
@@ -88,6 +96,13 @@ const App: React.FC = () => {
           root.classList.remove('dark');
       }
   }, [settings.theme]);
+  
+  // Validate activeJobId
+  useEffect(() => {
+      if (isLoaded && activeJobId !== 'all' && jobs.length > 0 && !jobs.find(j => j.id === activeJobId)) {
+          setActiveJobId('all');
+      }
+  }, [jobs, activeJobId, isLoaded]);
 
   const handleAddLog = (log: WorkLog) => {
     setLogs(prev => [log, ...prev]);
@@ -115,6 +130,7 @@ const App: React.FC = () => {
       if (window.confirm("確定刪除此工作？相關的工時紀錄也會被刪除且無法復原。")) {
           setJobs(prev => prev.filter(j => j.id !== jobId));
           setLogs(prev => prev.filter(l => l.jobId !== jobId));
+          if (activeJobId === jobId) setActiveJobId('all');
       }
   };
 
@@ -140,6 +156,8 @@ const App: React.FC = () => {
       } else {
           setJobs(data.jobs);
       }
+      // Restore imported active job or default to all
+      setActiveJobId(data.activeJobId || 'all');
     }
   };
 
@@ -185,7 +203,7 @@ const App: React.FC = () => {
               </h1>
               <div className="flex flex-col items-end">
                 <div className="text-xs font-medium px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full">
-                   {jobs.length > 1 ? `${jobs.length} 份工作` : (jobs[0] ? `${settings.currency} ${jobs[0].hourlyRate}/hr` : '')}
+                   {jobs.length > 1 ? (activeJobId === 'all' ? `${jobs.length} 份工作` : jobs.find(j => j.id === activeJobId)?.name) : (jobs[0] ? `${settings.currency} ${jobs[0].hourlyRate}/hr` : '')}
                 </div>
               </div>
            </div>
@@ -195,10 +213,23 @@ const App: React.FC = () => {
         <main className="max-w-3xl mx-auto p-6">
           <Routes>
             <Route path="/" element={
-              <Dashboard logs={logs} settings={settings} jobs={jobs} onUpdateJob={handleUpdateJob} />
+              <Dashboard 
+                logs={logs} 
+                settings={settings} 
+                jobs={jobs} 
+                onUpdateJob={handleUpdateJob} 
+                activeJobId={activeJobId} 
+                onJobChange={setActiveJobId} 
+              />
             } />
             <Route path="/calendar" element={
-              <CalendarView logs={logs} settings={settings} jobs={jobs} />
+              <CalendarView 
+                logs={logs} 
+                settings={settings} 
+                jobs={jobs} 
+                activeJobId={activeJobId}
+                onJobChange={setActiveJobId}
+              />
             } />
             <Route path="/log" element={
               <WorkLogger 
@@ -208,10 +239,19 @@ const App: React.FC = () => {
                 onDeleteLog={handleDeleteLog} 
                 templates={templates}
                 onUpdateTemplates={setTemplates}
+                activeJobId={activeJobId}
+                onJobChange={setActiveJobId}
               />
             } />
             <Route path="/verify" element={
-              <PayslipVerifier logs={logs} settings={settings} jobs={jobs} onAddLog={handleAddLog} />
+              <PayslipVerifier 
+                logs={logs} 
+                settings={settings} 
+                jobs={jobs} 
+                onAddLog={handleAddLog} 
+                activeJobId={activeJobId}
+                onJobChange={setActiveJobId}
+              />
             } />
             <Route path="/settings" element={
               <div className="space-y-6">
@@ -223,9 +263,9 @@ const App: React.FC = () => {
                     onUpdateJob={handleUpdateJob}
                     onDeleteJob={handleDeleteJob}
                 />
-                <DataManagement appState={{ logs, settings, jobs, templates }} onImport={handleImport} onUpdateSettings={setSettings} />
+                <DataManagement appState={{ logs, settings, jobs, templates, activeJobId }} onImport={handleImport} onUpdateSettings={setSettings} />
                 <div className="text-center text-xs text-gray-400 pt-10 pb-4 dark:text-gray-600">
-                  PayLevel Up v2.1 • Dark Mode & Templates
+                  PayLevel Up v2.2 • Multi-adjustment & Global State
                 </div>
               </div>
             } />
