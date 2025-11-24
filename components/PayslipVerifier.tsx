@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { WorkLog, UserSettings, Job } from '../types';
-import { FileCheck, Calendar, Calculator, AlertTriangle, CheckCircle, PlusCircle, MinusCircle, Percent, Briefcase, Trash2, Plus, Save } from 'lucide-react';
+import { FileCheck, Calendar, Calculator, AlertTriangle, CheckCircle, PlusCircle, MinusCircle, Percent, Briefcase, Trash2, Plus, Save, Tag } from 'lucide-react';
 
 interface PayslipVerifierProps {
   logs: WorkLog[];
@@ -14,15 +14,24 @@ interface PayslipVerifierProps {
 
 interface AdjustmentItem {
   id: string;
+  category: string; // New: Type of adjustment
   name: string;
   hours: string;
   rate: string;
   amount: string;
 }
 
+const ADJUSTMENT_TYPES = [
+    { label: '一般調整 (General)', value: 'General' },
+    { label: '膳食津貼/補償 (Meal Break)', value: 'Meal Break' },
+    { label: '加班 - 前段 (Overtime 1)', value: 'Overtime 1' },
+    { label: '加班 - 後段 (Overtime 2)', value: 'Overtime 2' },
+    { label: '獎金/津貼 (Allowance)', value: 'Allowance' },
+    { label: '扣除 (Deduction)', value: 'Deduction' }
+];
+
 export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings, jobs, onAddLog, activeJobId, onJobChange }) => {
   // Determine which job to use. If 'all' is selected, default to first job for calculation context or force selection.
-  // Usually verification is per job.
   const effectiveJobId = activeJobId === 'all' ? (jobs[0]?.id || '') : activeJobId;
   const activeJob = jobs.find(j => j.id === effectiveJobId);
 
@@ -36,8 +45,15 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
   // Dynamic Adjustments (Other Items)
   const [adjustments, setAdjustments] = useState<AdjustmentItem[]>([]);
 
-  const addAdjustment = () => {
-      setAdjustments([...adjustments, { id: crypto.randomUUID(), name: '', hours: '', rate: '', amount: '' }]);
+  const addAdjustment = (category = 'General', name = '') => {
+      setAdjustments([...adjustments, { 
+          id: crypto.randomUUID(), 
+          category, 
+          name: name || '', 
+          hours: '', 
+          rate: '', 
+          amount: '' 
+      }]);
   };
   
   const removeAdjustment = (id: string) => {
@@ -66,7 +82,11 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
         alert("請輸入有效的時數 (Hours)");
         return;
     }
-    if (window.confirm(`確定將 "${adj.name || '項目'}" 的 ${adj.hours} 小時加入工時紀錄嗎？這將累積到您的加薪進度中。`)) {
+    // Construct a meaningful note
+    const typeLabel = ADJUSTMENT_TYPES.find(t => t.value === adj.category)?.label.split('(')[0] || adj.category;
+    const noteText = `[${typeLabel.trim()}] ${adj.name}`;
+
+    if (window.confirm(`確定將 "${noteText}" 的 ${adj.hours} 小時加入工時紀錄嗎？\n這將累積到您的加薪進度中。`)) {
         onAddLog({
             id: crypto.randomUUID(),
             jobId: effectiveJobId,
@@ -74,7 +94,7 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
             startTime: '-',
             endTime: '-',
             duration: parseFloat(adj.hours),
-            notes: `Adjustment: ${adj.name}`,
+            notes: noteText,
             timestamp: Date.now()
         });
     }
@@ -175,7 +195,7 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
         {/* Job Selector */}
         <div className="mb-6">
             <label className="block text-xs font-medium text-gray-500 mb-1">選擇核對的工作</label>
-            <select value={effectiveJobId} onChange={(e) => onJobChange(e.target.value)} className="w-full bg-indigo-50 border-none text-indigo-900 rounded-lg p-2 font-bold">
+            <select value={effectiveJobId} onChange={(e) => onJobChange(e.target.value)} className="w-full bg-indigo-50 border-none text-indigo-900 rounded-lg p-2 font-bold focus:ring-2 focus:ring-indigo-500">
                 {jobs.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
             </select>
             {activeJobId === 'all' && <p className="text-[10px] text-gray-400 mt-1">* "所有工作"模式下默認顯示第一份工作</p>}
@@ -194,11 +214,11 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
                  <div className="bg-white border rounded-xl overflow-hidden">
                     <div className="grid grid-cols-2 divide-x border-b bg-gray-50">
                         <div className="p-3">
-                            <label className="text-[10px] font-bold text-gray-500 block mb-1">平日時數</label>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">平日時數 (Weekday)</label>
                             <input type="number" value={slipWeekdayHours} onChange={(e) => setSlipWeekdayHours(e.target.value)} className="w-full text-sm font-bold border-gray-200 rounded p-1 text-right"/>
                         </div>
                         <div className="p-3">
-                            <label className="text-[10px] font-bold text-gray-500 block mb-1">週末時數</label>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">週末時數 (Weekend)</label>
                             <input type="number" value={slipWeekendHours} onChange={(e) => setSlipWeekendHours(e.target.value)} className="w-full text-sm font-bold border-gray-200 rounded p-1 text-right"/>
                         </div>
                     </div>
@@ -216,16 +236,32 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
 
                     {/* Dynamic Adjustments Section */}
                     <div className="border-t bg-gray-50/50">
-                        <div className="p-3 flex justify-between items-center">
-                            <label className="text-xs font-bold text-gray-500">其他項目 / 加班 (Other/OT)</label>
-                            <button onClick={addAdjustment} className="text-xs bg-white border border-gray-300 hover:bg-gray-100 px-2 py-1 rounded flex items-center gap-1 transition-colors">
-                                <Plus className="w-3 h-3"/> 新增
-                            </button>
+                        <div className="p-3 flex flex-col gap-2">
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-bold text-gray-500">其他調整 / 加班 (Adjustments/OT)</label>
+                                <button onClick={() => addAdjustment()} className="text-xs bg-white border border-gray-300 hover:bg-gray-100 px-2 py-1 rounded flex items-center gap-1 transition-colors">
+                                    <Plus className="w-3 h-3"/> 自訂
+                                </button>
+                            </div>
+                            
+                            {/* Quick Add Buttons */}
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                                <button onClick={() => addAdjustment('Meal Break', 'Delayed Meal Brk')} className="flex-shrink-0 text-[10px] bg-orange-50 text-orange-600 border border-orange-100 px-2 py-1 rounded-lg hover:bg-orange-100">
+                                    + 膳食補償 (Meal)
+                                </button>
+                                <button onClick={() => addAdjustment('Overtime 1', 'OT First 2 Hrs')} className="flex-shrink-0 text-[10px] bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded-lg hover:bg-blue-100">
+                                    + 加班 (OT 1)
+                                </button>
+                                <button onClick={() => addAdjustment('Overtime 2', 'OT After 2 Hrs')} className="flex-shrink-0 text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-1 rounded-lg hover:bg-indigo-100">
+                                    + 加班 (OT 2)
+                                </button>
+                            </div>
                         </div>
                         
                         {/* Adjustment Headers */}
                         {adjustments.length > 0 && (
-                             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 px-3 pb-1 text-[10px] text-gray-400 font-medium">
+                             <div className="grid grid-cols-[1fr_2fr_0.7fr_0.7fr_1fr_auto] gap-2 px-3 pb-1 text-[10px] text-gray-400 font-medium">
+                                 <div>類別</div>
                                  <div>描述</div>
                                  <div className="text-center">時數</div>
                                  <div className="text-right">Rate</div>
@@ -236,7 +272,16 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
 
                         <div className="space-y-1 pb-3 px-3">
                             {adjustments.map((adj) => (
-                                <div key={adj.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center animate-fade-in">
+                                <div key={adj.id} className="grid grid-cols-[1fr_2fr_0.7fr_0.7fr_1fr_auto] gap-2 items-center animate-fade-in group">
+                                    {/* Category */}
+                                    <select 
+                                        value={adj.category}
+                                        onChange={(e) => updateAdjustment(adj.id, 'category', e.target.value)}
+                                        className="w-full text-[10px] border border-gray-300 rounded p-1.5 bg-white truncate"
+                                    >
+                                        {ADJUSTMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                    </select>
+
                                     {/* Name */}
                                     <input 
                                         type="text" 
@@ -277,22 +322,22 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
                                         {parseFloat(adj.hours) > 0 && (
                                             <button 
                                                 onClick={() => handleAddToLog(adj)} 
-                                                title="Add Hours to Work Log"
-                                                className="text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 p-1 rounded"
+                                                title="Save hours to progress"
+                                                className="bg-indigo-100 text-indigo-600 hover:bg-indigo-200 p-1.5 rounded-md transition-colors shadow-sm"
                                             >
-                                                <PlusCircle className="w-3.5 h-3.5" />
+                                                <Save className="w-3.5 h-3.5" />
                                             </button>
                                         )}
-                                        <button onClick={() => removeAdjustment(adj.id)} className="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-red-50">
+                                        <button onClick={() => removeAdjustment(adj.id)} className="text-gray-400 hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors">
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 </div>
                             ))}
-                            {adjustments.length === 0 && <div className="text-[10px] text-gray-400 text-center italic py-2">無額外項目</div>}
+                            {adjustments.length === 0 && <div className="text-[10px] text-gray-400 text-center italic py-4 bg-gray-50 rounded-lg border border-dashed border-gray-200 mx-2">點擊上方按鈕新增額外項目 (如: 加班、膳食補償)</div>}
                         </div>
                         {adjustments.length > 0 && (
-                            <div className="px-4 py-2 bg-gray-100 flex justify-between items-center text-xs font-bold text-gray-600">
+                            <div className="px-4 py-2 bg-gray-100 flex justify-between items-center text-xs font-bold text-gray-600 border-t border-gray-200">
                                 <span>調整總額</span>
                                 <span>{totalAdjustments > 0 ? '+' : ''}{totalAdjustments.toFixed(2)}</span>
                             </div>
@@ -326,9 +371,14 @@ export const PayslipVerifier: React.FC<PayslipVerifierProps> = ({ logs, settings
              <DiffRow type="weekend" diff={diffWeekend} appVal={appStats.weekendHours} slipVal={inputWeekend} />
              
              {totalAdjustments !== 0 && (
-                 <div className="p-3 rounded-lg border border-blue-100 bg-blue-50 flex items-center justify-between text-xs text-blue-800">
-                     <span className="font-bold">額外調整項目差異</span>
-                     <span>App 未自動追蹤: <span className="font-bold">+{totalAdjustments.toFixed(2)}</span></span>
+                 <div className="p-3 rounded-lg border border-blue-100 bg-blue-50 flex flex-col gap-1 text-xs text-blue-800">
+                     <div className="flex justify-between items-center font-bold">
+                        <span>額外調整項目差異</span>
+                        <span>+{totalAdjustments.toFixed(2)}</span>
+                     </div>
+                     <p className="text-blue-600/80 text-[10px]">
+                        * 若這些項目包含工時 (如加班)，請點擊項目旁的 <Save className="w-3 h-3 inline"/> 按鈕將其加入工時紀錄，以修正總加薪進度。
+                     </p>
                  </div>
              )}
 

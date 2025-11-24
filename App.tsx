@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink, Link } from 'react-router-dom';
 import { DEFAULT_SETTINGS, DEFAULT_JOB, WorkLog, UserSettings, AppState, Job, ShiftTemplate } from './types';
@@ -290,7 +289,7 @@ const NavButton = ({ to, icon, label }: { to: string, icon: React.ReactNode, lab
       }`
     }
   >
-    {React.cloneElement(icon as React.ReactElement, { size: 24, strokeWidth: 2.5 })}
+    {React.cloneElement(icon as React.ReactElement<any>, { size: 24, strokeWidth: 2.5 })}
     <span className="text-[10px] font-medium md:hidden">{label}</span>
   </NavLink>
 );
